@@ -13,19 +13,29 @@ const config: HardhatUserConfig = {
     mumbai: {
       url: process.env.POLYGON_MUMBAI_RPC || "https://rpc-mumbai.maticvigil.com",
       accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [],
-      chainId: 80002
+      chainId: 80001
     },
-    polygon: {
-      url: process.env.POLYGON_MAINNET_RPC || "https://polygon-rpc.com",
+    scrollSepolia: {
+      url: process.env.SCROLL_SEPOLIA_RPC || "https://sepolia.scrollscan.com",
       accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [],
-      chainId: 137
+      chainId: 534351
     }
   },
   etherscan: {
     apiKey: {
-      polygonMumbai: process.env.POLYGONSCAN_API_KEY || "",
-      polygon: process.env.POLYGONSCAN_API_KEY || ""
-    }
+      scrollSepolia: process.env.SCROLLSCAN_API_KEY || "",
+      polygonMumbai: process.env.POLYGONSCAN_API_KEY || ""
+    },
+    customChains: [
+      {
+        network: "scrollSepolia",
+        chainId: 534351,
+        urls: {
+          apiURL: "https://api-sepolia.scrollscan.com/api",
+          browserURL: "https://sepolia.scrollscan.com"
+        }
+      }
+    ]
   }
 };
 

@@ -1,12 +1,19 @@
 import { ethers } from "hardhat";
 import * as dotenv from "dotenv";
-import { generateChecksum } from "../index";
+import * as crypto from "crypto";
+
+const providerUrl = "https://sepolia-rpc.scroll.io";
+const contractAddress = "0xc57B523a03B87356676B92dE4a0d1edaaCCa4d31";
+
+function generateChecksum(input: string): string {
+  const hash = crypto.createHash("sha256").update(input).digest("hex");
+  return hash;
+}
 
 dotenv.config();
 
 async function main() {
   try {
-    const contractAddress = "0x27Eb1CcE195749980c93a066Cc99DC5DE58D9582";
     console.log("Testing Verifier contract at:", contractAddress);
 
     // Create a wallet using private key from .env
@@ -14,7 +21,7 @@ async function main() {
       throw new Error("PRIVATE_KEY not found in .env file");
     }
     
-    const provider = new ethers.JsonRpcProvider(process.env.POLYGON_MUMBAI_RPC);
+    const provider = new ethers.JsonRpcProvider(providerUrl);
     const wallet = new ethers.Wallet(process.env.PRIVATE_KEY, provider);
     console.log("Using wallet address:", wallet.address);
 

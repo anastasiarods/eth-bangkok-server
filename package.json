@@ -10,9 +10,11 @@
     "deploy:polygon": "hardhat run scripts/deploy.ts --network polygon",
     "verify:mumbai": "hardhat verify --network mumbai",
     "verify:polygon": "hardhat verify --network polygon",
-    "test:deployed": "hardhat run scripts/test-deployed.ts --network mumbai",
+    "test:deployed": "hardhat run scripts/test-deployed.ts",
     "test:deployed:polygon": "hardhat run scripts/test-deployed.ts --network polygon",
-    "test:endpoints": "bun run scripts/test-endpoints.ts"
+    "test:endpoints": "bun run scripts/test-endpoints.ts",
+    "deploy:scroll": "hardhat run scripts/deploy.ts --network scrollSepolia",
+    "verify:scroll": "hardhat verify --network scrollSepolia"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-chai-matchers": "^2.0.0",
