@@ -272,9 +272,9 @@ const server = Bun.serve({
         );
 
         // Store in Nillion
-        const res = await storeJSON(memory);
-
-        console.log("✅ Stored in Nillion:", res);
+        storeJSON(memory).then((res) => {
+          console.log("✅ Stored in Nillion:", res);
+        });
 
         return new Response(
           JSON.stringify({
