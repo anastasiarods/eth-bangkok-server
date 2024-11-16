@@ -1,6 +1,7 @@
 import * as crypto from 'crypto';
 import { ethers } from "hardhat";
 import { Database } from 'bun:sqlite';
+import { detectHarassment } from './ai';
 
 // Types based on the Omi documentation
 interface TranscriptSegment {
@@ -56,16 +57,25 @@ db.run(`
     checksum TEXT NOT NULL,
     tx_hash TEXT,
     created_at TEXT NOT NULL,
-    stored_at TEXT NOT NULL
+    stored_at TEXT NOT NULL,
+    name TEXT,
+    summary TEXT,
+    headline TEXT
   )
 `);
 
 // Function to store memory in SQLite
 async function storeMemoryInDb(
-  uid: string, 
-  memory: Memory, 
-  checksum: string, 
-  txHash: string
+  uid: string,
+  memory: Memory,
+  checksum: string,
+  txHash: string,
+  harassment: {
+    hasHarassment?: boolean;
+    name?: string;
+    summary?: string;
+    headline?: string;
+  }
 ) {
   const query = db.prepare(`
     INSERT INTO memories (
@@ -76,8 +86,11 @@ async function storeMemoryInDb(
       checksum, 
       tx_hash, 
       created_at, 
-      stored_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      stored_at,
+      name,
+      summary,
+      headline,
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   query.run(
@@ -88,7 +101,10 @@ async function storeMemoryInDb(
     checksum,
     txHash,
     memory.created_at,
-    new Date().toISOString()
+    new Date().toISOString(),
+    harassment.name ?? "",
+    harassment.summary ?? "",
+    harassment.headline ?? ""
   );
 }
 
@@ -98,7 +114,7 @@ function getMemoryByIdFromDb(uid: string, memoryId: number) {
     SELECT * FROM memories 
     WHERE uid = ? AND memory_id = ?
   `);
-  
+
   return query.get(uid, memoryId);
 }
 
@@ -109,7 +125,7 @@ function getUserMemoriesFromDb(uid: string) {
     WHERE uid = ? 
     ORDER BY stored_at DESC
   `);
-  
+
   return query.all(uid);
 }
 
@@ -119,7 +135,7 @@ function getAllMemoriesFromDb() {
     SELECT * FROM memories 
     ORDER BY stored_at DESC
   `);
-  
+
   return query.all();
 }
 
@@ -138,7 +154,7 @@ async function storeChecksumOnChain(checksum: string): Promise<{ success: boolea
 
     const provider = new ethers.JsonRpcProvider(process.env.POLYGON_MUMBAI_RPC);
     const wallet = new ethers.Wallet(process.env.PRIVATE_KEY, provider);
-    
+
     const contractAddress = "0x27Eb1CcE195749980c93a066Cc99DC5DE58D9582";
     const Verifier = await ethers.getContractFactory("Verifier", wallet);
     const verifier = Verifier.attach(contractAddress);
@@ -146,7 +162,7 @@ async function storeChecksumOnChain(checksum: string): Promise<{ success: boolea
     const checksumBytes = `0x${checksum}`;
     const tx = await verifier.recordChecksum(checksumBytes);
     const receipt = await tx.wait();
-    
+
     return {
       success: true,
       txHash: receipt.hash
@@ -172,20 +188,32 @@ const server = Bun.serve({
           return new Response(JSON.stringify({
             success: false,
             error: "Missing uid parameter"
-          }), { 
+          }), {
             status: 400,
             headers: { "Content-Type": "application/json" }
           });
         }
 
         const memory: Memory = await req.json();
-        
+
         console.log("Processing memory:", {
           uid,
           memoryId: memory.id,
           title: memory.structured.title,
           createdAt: memory.created_at
         });
+
+        const harassment = await detectHarassment(memory.transcript)
+
+        console.log(harassment)
+
+        if (!harassment.object.hasHarassment) {
+          return new Response(JSON.stringify({
+            success: true,
+          }), {
+            headers: { "Content-Type": "application/json" }
+          })
+        }
 
         // Generate and store checksum
         const checksum = generateChecksum(memory.transcript);
@@ -196,7 +224,7 @@ const server = Bun.serve({
         }
 
         // Store in SQLite
-        await storeMemoryInDb(uid, memory, checksum, txHash);
+        await storeMemoryInDb(uid, memory, checksum, txHash, harassment.object);
 
         return new Response(JSON.stringify({
           success: true,
@@ -234,14 +262,14 @@ const server = Bun.serve({
         return new Response(JSON.stringify({
           success: false,
           error: "Missing uid or memoryId parameter"
-        }), { 
+        }), {
           status: 400,
           headers: { "Content-Type": "application/json" }
         });
       }
 
       const memory = getMemoryByIdFromDb(uid, parseInt(memoryId));
-      
+
       return new Response(JSON.stringify({
         success: true,
         data: memory
@@ -258,14 +286,14 @@ const server = Bun.serve({
         return new Response(JSON.stringify({
           success: false,
           error: "Missing uid parameter"
-        }), { 
+        }), {
           status: 400,
           headers: { "Content-Type": "application/json" }
         });
       }
 
       const memories = getUserMemoriesFromDb(uid);
-      
+
       return new Response(JSON.stringify({
         success: true,
         data: memories
@@ -278,7 +306,7 @@ const server = Bun.serve({
     if (req.method === "GET" && url.pathname === "/all-memories") {
       try {
         const memories = getAllMemoriesFromDb();
-        
+
         return new Response(JSON.stringify({
           success: true,
           data: {
@@ -287,7 +315,7 @@ const server = Bun.serve({
             timestamp: new Date().toISOString()
           }
         }), {
-          headers: { 
+          headers: {
             "Content-Type": "application/json",
             "Access-Control-Allow-Origin": "*" // Allow CORS
           }
@@ -300,7 +328,7 @@ const server = Bun.serve({
           details: error instanceof Error ? error.message : "Unknown error"
         }), {
           status: 500,
-          headers: { 
+          headers: {
             "Content-Type": "application/json",
             "Access-Control-Allow-Origin": "*"
           }
@@ -321,7 +349,7 @@ const server = Bun.serve({
 
     return new Response(JSON.stringify({
       error: "Not Found"
-    }), { 
+    }), {
       status: 404,
       headers: { "Content-Type": "application/json" }
     });
