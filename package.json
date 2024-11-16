@@ -1,0 +1,32 @@
+{
+  "name": "eth-thailand",
+  "module": "index.ts",
+  "scripts": {
+    "dev": "bun run --watch index.ts",
+    "compile": "hardhat compile",
+    "test": "hardhat test",
+    "deploy": "hardhat run scripts/deploy.ts",
+    "deploy:mumbai": "hardhat run scripts/deploy.ts --network mumbai",
+    "deploy:polygon": "hardhat run scripts/deploy.ts --network polygon",
+    "verify:mumbai": "hardhat verify --network mumbai",
+    "verify:polygon": "hardhat verify --network polygon",
+    "test:deployed": "hardhat run scripts/test-deployed.ts --network mumbai",
+    "test:deployed:polygon": "hardhat run scripts/test-deployed.ts --network polygon"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-chai-matchers": "^2.0.0",
+    "@nomicfoundation/hardhat-ethers": "^3.0.0",
+    "@nomicfoundation/hardhat-toolbox": "^5.0.0",
+    "@types/bun": "latest",
+    "@types/node": "^22.9.0",
+    "chai": "^4.3.0",
+    "dotenv": "^16.4.5",
+    "ethers": "^6.0.0",
+    "hardhat": "^2.22.15",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.0.0"
+  },
+  "peerDependencies": {
+    "typescript": "^5.0.0"
+  }
+}
