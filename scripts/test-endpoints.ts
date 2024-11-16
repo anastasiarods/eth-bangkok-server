@@ -100,6 +100,28 @@ async function testEndpoints() {
     const allMemoriesResponse = await fetch(`${baseUrl}/all-memories`);
     console.log("All memories response:", await allMemoriesResponse.json(), "\n");
 
+    // 6. Test delete user memories
+    console.log("\nTesting delete user memories...");
+    const deleteResponse = await fetch(
+      `${baseUrl}/memories?uid=${testUid}`,
+      {
+        method: "DELETE"
+      }
+    );
+    console.log("Delete response:", await deleteResponse.json());
+
+    // 7. Verify deletion by trying to get user memories again
+    console.log("\nVerifying deletion...");
+    const verifyDeletionResponse = await fetch(
+      `${baseUrl}/memories?uid=${testUid}`
+    );
+    const verifyResult = await verifyDeletionResponse.json();
+    console.log("User memories after deletion:", verifyResult);
+    
+    if (verifyResult.data.length > 0) {
+      throw new Error("Memories were not deleted successfully");
+    }
+
     console.log("All tests completed successfully!");
 
   } catch (error) {

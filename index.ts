@@ -28,6 +28,7 @@ interface StructuredData {
 }
 
 interface Memory {
+  text: string;
   id: number;
   created_at: string;
   started_at: string;
@@ -75,7 +76,8 @@ async function storeMemoryInDb(
     name?: string;
     summary?: string;
     headline?: string;
-  }
+  },
+  fullText: string
 ) {
   const query = db.prepare(`
     INSERT INTO memories (
@@ -89,7 +91,7 @@ async function storeMemoryInDb(
       stored_at,
       name,
       summary,
-      headline,
+      headline
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
@@ -97,7 +99,7 @@ async function storeMemoryInDb(
     uid,
     memory.id,
     memory.structured.title,
-    memory.transcript,
+    fullText,
     checksum,
     txHash,
     memory.created_at,
@@ -137,6 +139,30 @@ function getAllMemoriesFromDb() {
   `);
 
   return query.all();
+}
+
+// Add this function to delete memories for a user
+function deleteUserMemoriesFromDb(uid: string): { success: boolean; count: number } {
+  try {
+    const query = db.prepare(`
+      DELETE FROM memories 
+      WHERE uid = ?
+      RETURNING *
+    `);
+    
+    const deletedRows = query.all(uid);
+    
+    return {
+      success: true,
+      count: deletedRows.length
+    };
+  } catch (error) {
+    console.error("Error deleting memories:", error);
+    return {
+      success: false,
+      count: 0
+    };
+  }
 }
 
 export function generateChecksum(input: string): string {
@@ -196,27 +222,29 @@ const server = Bun.serve({
 
         const memory: Memory = await req.json();
 
-        console.log("Processing memory:", {
-          uid,
-          memoryId: memory.id,
-          title: memory.structured.title,
-          createdAt: memory.created_at
-        });
+        console.log("Processing memory:", memory);
 
-        const harassment = await detectHarassment(memory.transcript)
+        // Concatenate text from transcript segments with speaker context
+        const fullText = memory.transcript_segments
+          .map(segment => `${segment.speaker}: ${segment.text}`)
+          .join("\n");
 
-        console.log(harassment)
+        console.log("Concatenated text with speakers:", fullText);
+
+        const harassment = await detectHarassment(fullText);
+
+        console.log(harassment.object);
 
         if (!harassment.object.hasHarassment) {
           return new Response(JSON.stringify({
             success: true,
           }), {
             headers: { "Content-Type": "application/json" }
-          })
+          });
         }
 
-        // Generate and store checksum
-        const checksum = generateChecksum(memory.transcript);
+        // Generate and store checksum using concatenated text
+        const checksum = generateChecksum(fullText);
         const { success, txHash } = await storeChecksumOnChain(checksum);
 
         if (!success || !txHash) {
@@ -224,7 +252,7 @@ const server = Bun.serve({
         }
 
         // Store in SQLite
-        await storeMemoryInDb(uid, memory, checksum, txHash, harassment.object);
+        await storeMemoryInDb(uid, memory, checksum, txHash, harassment.object, fullText);
 
         return new Response(JSON.stringify({
           success: true,
@@ -233,7 +261,7 @@ const server = Bun.serve({
             memoryId: memory.id,
             checksum,
             txHash,
-            polygonscanUrl: `https://www.oklink.com/amoy/tx/${txHash}`,
+            polygonscanUrl: `https://polygon.blockscout.com/tx/${txHash}`,
             timestamp: new Date().toISOString()
           }
         }), {
@@ -329,6 +357,57 @@ const server = Bun.serve({
         }), {
           status: 500,
           headers: {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*"
+          }
+        });
+      }
+    }
+
+    // New endpoint: Delete all memories for a user
+    if (req.method === "DELETE" && url.pathname === "/memories") {
+      try {
+        const uid = url.searchParams.get("uid");
+        
+        if (!uid) {
+          return new Response(JSON.stringify({
+            success: false,
+            error: "Missing uid parameter"
+          }), {
+            status: 400,
+            headers: { "Content-Type": "application/json" }
+          });
+        }
+
+        const result = deleteUserMemoriesFromDb(uid);
+        
+        if (!result.success) {
+          throw new Error("Failed to delete memories");
+        }
+
+        return new Response(JSON.stringify({
+          success: true,
+          data: {
+            uid,
+            deletedCount: result.count,
+            timestamp: new Date().toISOString()
+          }
+        }), {
+          headers: { 
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*"
+          }
+        });
+
+      } catch (error) {
+        console.error("Error deleting memories:", error);
+        return new Response(JSON.stringify({
+          success: false,
+          error: "Failed to delete memories",
+          details: error instanceof Error ? error.message : "Unknown error"
+        }), {
+          status: 500,
+          headers: { 
             "Content-Type": "application/json",
             "Access-Control-Allow-Origin": "*"
           }
