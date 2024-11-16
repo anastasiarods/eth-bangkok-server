@@ -1,7 +1,8 @@
-import * as crypto from 'crypto';
+import * as crypto from "crypto";
 import { ethers } from "hardhat";
-import { Database } from 'bun:sqlite';
-import { detectHarassment } from './ai';
+import { Database } from "bun:sqlite";
+import { detectHarassment } from "./utils.ts/ai";
+import { storeJSON } from "./utils.ts/nillion";
 
 // Types based on the Omi documentation
 interface TranscriptSegment {
@@ -45,7 +46,7 @@ interface Memory {
 }
 
 // Initialize SQLite database
-const db = new Database(':memory:');
+const db = new Database(":memory:");
 
 // Create tables
 db.run(`
@@ -142,37 +143,40 @@ function getAllMemoriesFromDb() {
 }
 
 // Add this function to delete memories for a user
-function deleteUserMemoriesFromDb(uid: string): { success: boolean; count: number } {
+function deleteUserMemoriesFromDb(uid: string): {
+  success: boolean;
+  count: number;
+} {
   try {
     const query = db.prepare(`
       DELETE FROM memories 
       WHERE uid = ?
       RETURNING *
     `);
-    
+
     const deletedRows = query.all(uid);
-    
+
     return {
       success: true,
-      count: deletedRows.length
+      count: deletedRows.length,
     };
   } catch (error) {
     console.error("Error deleting memories:", error);
     return {
       success: false,
-      count: 0
+      count: 0,
     };
   }
 }
 
 export function generateChecksum(input: string): string {
-  const hash = crypto.createHash('sha256')
-    .update(input)
-    .digest('hex');
+  const hash = crypto.createHash("sha256").update(input).digest("hex");
   return hash;
 }
 
-async function storeChecksumOnChain(checksum: string): Promise<{ success: boolean; txHash?: string }> {
+async function storeChecksumOnChain(
+  checksum: string
+): Promise<{ success: boolean; txHash?: string }> {
   try {
     if (!process.env.PRIVATE_KEY) {
       throw new Error("PRIVATE_KEY not found in .env file");
@@ -191,12 +195,12 @@ async function storeChecksumOnChain(checksum: string): Promise<{ success: boolea
 
     return {
       success: true,
-      txHash: receipt.hash
+      txHash: receipt.hash,
     };
   } catch (error) {
     console.error("Error storing checksum on chain:", error);
     return {
-      success: false
+      success: false,
     };
   }
 }
@@ -211,13 +215,16 @@ const server = Bun.serve({
       try {
         const uid = url.searchParams.get("uid");
         if (!uid) {
-          return new Response(JSON.stringify({
-            success: false,
-            error: "Missing uid parameter"
-          }), {
-            status: 400,
-            headers: { "Content-Type": "application/json" }
-          });
+          return new Response(
+            JSON.stringify({
+              success: false,
+              error: "Missing uid parameter",
+            }),
+            {
+              status: 400,
+              headers: { "Content-Type": "application/json" },
+            }
+          );
         }
 
         const memory: Memory = await req.json();
@@ -226,7 +233,7 @@ const server = Bun.serve({
 
         // Concatenate text from transcript segments with speaker context
         const fullText = memory.transcript_segments
-          .map(segment => `${segment.speaker}: ${segment.text}`)
+          .map((segment) => `${segment.speaker}: ${segment.text}`)
           .join("\n");
 
         console.log("Concatenated text with speakers:", fullText);
@@ -236,11 +243,14 @@ const server = Bun.serve({
         console.log(harassment.object);
 
         if (!harassment.object.hasHarassment) {
-          return new Response(JSON.stringify({
-            success: true,
-          }), {
-            headers: { "Content-Type": "application/json" }
-          });
+          return new Response(
+            JSON.stringify({
+              success: true,
+            }),
+            {
+              headers: { "Content-Type": "application/json" },
+            }
+          );
         }
 
         // Generate and store checksum using concatenated text
@@ -252,32 +262,49 @@ const server = Bun.serve({
         }
 
         // Store in SQLite
-        await storeMemoryInDb(uid, memory, checksum, txHash, harassment.object, fullText);
+        await storeMemoryInDb(
+          uid,
+          memory,
+          checksum,
+          txHash,
+          harassment.object,
+          fullText
+        );
 
-        return new Response(JSON.stringify({
-          success: true,
-          data: {
-            uid,
-            memoryId: memory.id,
-            checksum,
-            txHash,
-            polygonscanUrl: `https://polygon.blockscout.com/tx/${txHash}`,
-            timestamp: new Date().toISOString()
+        // Store in Nillion
+        const res = await storeJSON(memory);
+
+        console.log("✅ Stored in Nillion:", res);
+
+        return new Response(
+          JSON.stringify({
+            success: true,
+            data: {
+              uid,
+              memoryId: memory.id,
+              checksum,
+              txHash,
+              polygonscanUrl: `https://polygon.blockscout.com/tx/${txHash}`,
+              timestamp: new Date().toISOString(),
+            },
+          }),
+          {
+            headers: { "Content-Type": "application/json" },
           }
-        }), {
-          headers: { "Content-Type": "application/json" }
-        });
-
+        );
       } catch (error) {
         console.error("Memory webhook error:", error);
-        return new Response(JSON.stringify({
-          success: false,
-          error: "Failed to process memory",
-          details: error instanceof Error ? error.message : "Unknown error"
-        }), {
-          status: 500,
-          headers: { "Content-Type": "application/json" }
-        });
+        return new Response(
+          JSON.stringify({
+            success: false,
+            error: "Failed to process memory",
+            details: error instanceof Error ? error.message : "Unknown error",
+          }),
+          {
+            status: 500,
+            headers: { "Content-Type": "application/json" },
+          }
+        );
       }
     }
 
@@ -287,23 +314,29 @@ const server = Bun.serve({
       const memoryId = url.searchParams.get("memoryId");
 
       if (!uid || !memoryId) {
-        return new Response(JSON.stringify({
-          success: false,
-          error: "Missing uid or memoryId parameter"
-        }), {
-          status: 400,
-          headers: { "Content-Type": "application/json" }
-        });
+        return new Response(
+          JSON.stringify({
+            success: false,
+            error: "Missing uid or memoryId parameter",
+          }),
+          {
+            status: 400,
+            headers: { "Content-Type": "application/json" },
+          }
+        );
       }
 
       const memory = getMemoryByIdFromDb(uid, parseInt(memoryId));
 
-      return new Response(JSON.stringify({
-        success: true,
-        data: memory
-      }), {
-        headers: { "Content-Type": "application/json" }
-      });
+      return new Response(
+        JSON.stringify({
+          success: true,
+          data: memory,
+        }),
+        {
+          headers: { "Content-Type": "application/json" },
+        }
+      );
     }
 
     // Get all memories for a user
@@ -311,23 +344,29 @@ const server = Bun.serve({
       const uid = url.searchParams.get("uid");
 
       if (!uid) {
-        return new Response(JSON.stringify({
-          success: false,
-          error: "Missing uid parameter"
-        }), {
-          status: 400,
-          headers: { "Content-Type": "application/json" }
-        });
+        return new Response(
+          JSON.stringify({
+            success: false,
+            error: "Missing uid parameter",
+          }),
+          {
+            status: 400,
+            headers: { "Content-Type": "application/json" },
+          }
+        );
       }
 
       const memories = getUserMemoriesFromDb(uid);
 
-      return new Response(JSON.stringify({
-        success: true,
-        data: memories
-      }), {
-        headers: { "Content-Type": "application/json" }
-      });
+      return new Response(
+        JSON.stringify({
+          success: true,
+          data: memories,
+        }),
+        {
+          headers: { "Content-Type": "application/json" },
+        }
+      );
     }
 
     // New endpoint: Get all memories
@@ -335,32 +374,38 @@ const server = Bun.serve({
       try {
         const memories = getAllMemoriesFromDb();
 
-        return new Response(JSON.stringify({
-          success: true,
-          data: {
-            memories,
-            count: memories.length,
-            timestamp: new Date().toISOString()
+        return new Response(
+          JSON.stringify({
+            success: true,
+            data: {
+              memories,
+              count: memories.length,
+              timestamp: new Date().toISOString(),
+            },
+          }),
+          {
+            headers: {
+              "Content-Type": "application/json",
+              "Access-Control-Allow-Origin": "*", // Allow CORS
+            },
           }
-        }), {
-          headers: {
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*" // Allow CORS
-          }
-        });
+        );
       } catch (error) {
         console.error("Error fetching all memories:", error);
-        return new Response(JSON.stringify({
-          success: false,
-          error: "Failed to fetch memories",
-          details: error instanceof Error ? error.message : "Unknown error"
-        }), {
-          status: 500,
-          headers: {
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*"
+        return new Response(
+          JSON.stringify({
+            success: false,
+            error: "Failed to fetch memories",
+            details: error instanceof Error ? error.message : "Unknown error",
+          }),
+          {
+            status: 500,
+            headers: {
+              "Content-Type": "application/json",
+              "Access-Control-Allow-Origin": "*",
+            },
           }
-        });
+        );
       }
     }
 
@@ -368,71 +413,87 @@ const server = Bun.serve({
     if (req.method === "DELETE" && url.pathname === "/memories") {
       try {
         const uid = url.searchParams.get("uid");
-        
+
         if (!uid) {
-          return new Response(JSON.stringify({
-            success: false,
-            error: "Missing uid parameter"
-          }), {
-            status: 400,
-            headers: { "Content-Type": "application/json" }
-          });
+          return new Response(
+            JSON.stringify({
+              success: false,
+              error: "Missing uid parameter",
+            }),
+            {
+              status: 400,
+              headers: { "Content-Type": "application/json" },
+            }
+          );
         }
 
         const result = deleteUserMemoriesFromDb(uid);
-        
+
         if (!result.success) {
           throw new Error("Failed to delete memories");
         }
 
-        return new Response(JSON.stringify({
-          success: true,
-          data: {
-            uid,
-            deletedCount: result.count,
-            timestamp: new Date().toISOString()
+        return new Response(
+          JSON.stringify({
+            success: true,
+            data: {
+              uid,
+              deletedCount: result.count,
+              timestamp: new Date().toISOString(),
+            },
+          }),
+          {
+            headers: {
+              "Content-Type": "application/json",
+              "Access-Control-Allow-Origin": "*",
+            },
           }
-        }), {
-          headers: { 
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*"
-          }
-        });
-
+        );
       } catch (error) {
         console.error("Error deleting memories:", error);
-        return new Response(JSON.stringify({
-          success: false,
-          error: "Failed to delete memories",
-          details: error instanceof Error ? error.message : "Unknown error"
-        }), {
-          status: 500,
-          headers: { 
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*"
+        return new Response(
+          JSON.stringify({
+            success: false,
+            error: "Failed to delete memories",
+            details: error instanceof Error ? error.message : "Unknown error",
+          }),
+          {
+            status: 500,
+            headers: {
+              "Content-Type": "application/json",
+              "Access-Control-Allow-Origin": "*",
+            },
           }
-        });
+        );
       }
     }
 
     // Health check endpoint
     if (req.method === "GET" && url.pathname === "/health") {
-      return new Response(JSON.stringify({
-        status: "healthy",
-        version: "1.0.0",
-        timestamp: new Date().toISOString()
-      }), {
-        headers: { "Content-Type": "application/json" }
-      });
+      return new Response(
+        JSON.stringify({
+          status: "healthy",
+          version: "1.0.0",
+          timestamp: new Date().toISOString(),
+        }),
+        {
+          headers: { "Content-Type": "application/json" },
+        }
+      );
     }
 
-    return new Response(JSON.stringify({
-      error: "Not Found"
-    }), {
-      status: 404,
-      headers: { "Content-Type": "application/json" }
-    });
+    return new Response(
+      JSON.stringify({
+        error: "Not Found",
+      }),
+      {
+        status: 404,
+        headers: { "Content-Type": "application/json" },
+      }
+    );
   },
 });
 
-console.log(`Omi Memory Creation Trigger server listening on http://localhost:${server.port}`);
+console.log(
+  `Omi Memory Creation Trigger server listening on http://localhost:${server.port}`
+);
