@@ -3,6 +3,7 @@ import { ethers } from "hardhat";
 import { Database } from "bun:sqlite";
 import { detectHarassment } from "./utils.ts/ai";
 import { storeJSON } from "./utils.ts/nillion";
+import { attestOnSign } from "./utils.ts/sign";
 
 // Types based on the Omi documentation
 interface TranscriptSegment {
@@ -176,7 +177,7 @@ export function generateChecksum(input: string): string {
 
 async function storeChecksumOnChain(
   checksum: string
-): Promise<{ success: boolean; txHash?: string }> {
+): Promise<{ success: boolean; txHash?: string; attestation?: string }> {
   try {
     if (!process.env.PRIVATE_KEY) {
       throw new Error("PRIVATE_KEY not found in .env file");
@@ -193,9 +194,14 @@ async function storeChecksumOnChain(
     const tx = await verifier.recordChecksum(checksumBytes);
     const receipt = await tx.wait();
 
+    const attestation = await attestOnSign(
+      checksum
+    ).catch(console.error);
+
     return {
       success: true,
       txHash: receipt.hash,
+      attestation: attestation?.txHash
     };
   } catch (error) {
     console.error("Error storing checksum on chain:", error);
@@ -270,6 +276,7 @@ const server = Bun.serve({
           harassment.object,
           fullText
         );
+
 
         // Store in Nillion
         storeJSON(memory).then((res) => {
